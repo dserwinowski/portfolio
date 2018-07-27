@@ -1,0 +1,245 @@
+---
+title: "Clustering II"
+output: html_notebook
+---
+
+# 1. Overview
+In this notebook we will use clustering to transform a sample image to see how clustering can be used beyond simple data frames.
+
+# 2. Libraries
+A new library will be installed and used - imager
+```{r}
+library(imager)
+```
+  
+# 3. Loading sample image
+This function will load a sample image from a file or URL using imager library and store it as CIMG file (Effectively being a very large string of numbers).
+
+Display function will show you the picture in the separate window
+
+More information can be found under:
+https://cran.r-project.org/web/packages/imager/vignettes/gettingstarted.html
+
+```{r}
+image <-load.image("FRABEL.jpg")
+display(image)
+```
+
+# 4. Reformatting an image
+Here we will transform the data from an image to a dataframe so it can be read as a bunch of RGB (red, green, blue) values for a single pixel. THis is actually how a computer stores an image.
+  
+
+```{r}
+dfimage <- as.data.frame(image)
+head(dfimage)
+```
+  
+
+x - width  
+y - height  
+cc - depth  
+value - colour channel  
+  
+
+The function below reshape (transforms) the data frame onto a pivot table that will show RGB values for each pixel and turns into a "wide" picture
+
+```{r}
+pivotimage <- reshape(dfimage, direction = "wide", timevar = "cc", idvar = c("x", "y"))
+head(pivotimage)
+```
+  
+
+After reshaping - we need to rename columns as per the RGB convention (as these values relate to the density of each colour in the colour mix)
+
+```{r}
+names(pivotimage)[3] <- "R"
+names(pivotimage)[4] <- "G"
+names(pivotimage)[5] <- "B"
+head(pivotimage)
+
+```
+
+# 5. Sneak peek onto the image
+The easiest way to see the image is to use ggplot function and draw it as a plot. For this we need to use ggplot2 library
+  
+However, first we need to convert data from RGB to HEX to allow computer to understand what colour to use. For this, we will use "rgb" function and store it as a separate value under imgcolour variable. 
+
+```{r}
+imgcolour <- rgb(pivotimage[c("R","G","B")])
+```
+  
+Now we can plot the image using ggplot function
+```{r}
+library(ggplot2)
+ggplot(data=pivotimage)+
+  aes(x=x, y=-y)+
+  geom_point(colour=imgcolour)+
+  coord_fixed()
+```
+  
+__ggplot__ function allows you to do many things, but you need to specify every parameter (as oppose to qplot function for example). Remember to use "+" sign to add another parameter  
+__data__ = dataframe - in this case reshaped one (pivotimage)  
+__aes__ allows to specify aesthetics and dimensions. In this case it's easy (x and y), but you need to be vary that you need to reverse y value (-y)  
+__geom__ allows to define the shae of the graph and add parameters to this shape. In our case geom_point is best suited as it plots dots with colors defined in "colour" parameter. Colour should equal newly created HEX values so that the program will know what HEX value each pixel should have.   
+__coord_fixed__ parameter allows to fix the ratio for both axis - otherwise the picture could look too wide or too narrow.  
+
+
+#6. Working with k-means - clustering
+Here we are going to create clusters for our image using k-means algorithm and function. 
+
+First we need to define the number of clusters that we want to have - let's choose 3 and store it under a new variable
+
+```{r}
+kparameter <- 4
+```
+  
+Then we need to define imgCluster variable that will store all rows from the pivot table but only RGB columns
+```{r}
+imgCluster <- data.frame(pivotimage$R, pivotimage$G, pivotimage$B)
+head(imgCluster)
+```
+
+Now we're going to use k-means to find centroids for us. These are shown below and represents most important colours on the image
+```{r}
+kmeansresults <- kmeans(imgCluster, centers = kparameter)
+kmeansresults$centers
+```
+  
+K-means also created clusters for each pixel so we can group pixels together. Now adding newly created groups to each pixel
+```{r}
+pivotimage$Cluster <- kmeansresults$cluster
+```
+
+#7. Cluster visualisation
+This is how you can visualize the results of the clustering. To do that we will use some functions from "plotly" library so you'd need to install it first.
+  
+First we need to convert centroids found from RGB onto HEX using rgb function.
+```{r}
+ClusterColours <- rgb(kmeansresults$centers)
+ClusterColours
+```
+  
+Now we have got colours of these centroids and we can use plot function to view them. This code block will plot rectangular boxes in each color (centroid) with a name of the cluster in it. 
+
+```{r}
+SetTextContrastColor <- function(color)
+{
+  ifelse( mean(col2rgb(color)) > 127, "black", "white")}
+##Function above will allow you to define whether to set the color of the cluster name in white or black depending on the cluster colour (if dark then white label and vice versa)
+
+
+plot(0, type = "n", axes = FALSE, ylab = "", xlab = "", ylim = c(2,0), xlim = c(0,5))
+title("Clusters as colours")
+##Plotting a space without data (0), type n, axes not visible and with size 5 in width and size 2 height
+
+for (i in 0:(kparameter-1)) {
+  rect(i,0,i+1,1,col=ClusterColours[i+1])
+  text(i+0.5,0.5, i+1, col=SetTextContrastColor(ClusterColours[i+1]))}
+##This loop function will plot rectangulars in colors of clusters and labels on the previously created space. 
+
+```
+
+Now we're adding cluster group to each point in the imgCluster frame based on centroids found using k-means
+```{r}
+imgCluster$cluster <-kmeansresults$cluster
+head(imgCluster)
+```
+
+Now we're ready to plot some more ..
+
+
+```{r}
+library(plotly)
+imgPivotSample <- pivotimage[sample(1:nrow(pivotimage), 1000, replace=FALSE),]
+##Creating a sample of points from the image (processing of the full image might crash computer as it has millions of pixels)
+
+plot <- plot_ly(
+    imgPivotSample, x = ~R, y = ~G, z = ~B,
+##Take sample of 1000 points and for each point - imgPivotSample
+## For each dimension x,y,z assign one colour (R,G,B) so RGB would be coordinates on the 3D plot
+    color = ~Cluster, 
+## Color parameter takes the value from the cluster column for each point and plot this point in a colour of the cluster 
+    colors = rgb(kmeansresults$centers),
+## colors parameter shows a vector of colours in HEX format (after converting centroids using rgb function)
+    marker = list(symbol = "circle", size = 4)
+## marker parameter sets point type and size
+  ) %>%
+  add_markers() %>%
+  layout(
+    scene = list(xaxis = list(title = 'Red', color='#FF0000'),
+                 yaxis = list(title = 'Green', color='#00FF00'),
+                 zaxis = list(title = 'Blue', color='#0000FF'))
+  )
+##Add markers function adds colours to each axis in line with its name - red, green, blue
+
+plot
+##Plots the variable created using plot_ly
+
+```
+
+#8. Fine tuning k-means
+This chapter is to fine tune k-means to see how many clusters are optimal for the chosen image. For this we will use WSS (within cluster sum of squares) method. 
+
+
+```{r}
+kparameterMax <- 10
+##Set the max number of clusters possible
+
+wss <- sapply(1:kparameterMax,
+        function(k){kmeans(pivotimage[c("R", "G", "B")], k)$tot.withinss})
+##Calculate wss for different number of clusters for our image stored under pivotimage and store it under "wss" variable
+
+plot(1:kparameterMax, wss,
+       type="b", pch = 19, frame = FALSE,
+       xlab="Number of clusters K",
+       ylab="Total within-clusters sum of squares")
+##This is to plot the line graph of wss variable to spot the elbow - the optimum number of clusters
+
+abline (v=4, lty=2)
+```
+
+
+#9. Recolour the image
+Here we will recolour the image using centroids found only - so only 4 colours on the entire picture will be used. Each point from the image will be recoloured by the colour of its centroid depending on the cluster it's in.
+  
+First create a new variable that will allow to store "reimaged" image by converting each point to the color of its cluster and use rgb function to convert it to HEX
+```{r}
+kColours <- rgb(kmeansresults$centers[pivotimage$Cluster,])
+```
+  
+Then plot it using ggplot
+```{r}
+ggplot(data = pivotimage, aes(x = x, y = -y)) +  geom_point(colour = kColours) + coord_fixed()
+```
+
+#10. Instagram-like filter? Why not?
+So now we know how to find centroids and apply it to the image. Why not making it more Instagram-like and choose one colour and make the ret of the image greyscale?
+We need  to choose one cluster - maybe red? So number 4.
+
+Now we will recolour our image leaving red and turining everything else onto greyscale. However first we need to create a function that will determine it - it will be called "color_or_grey"
+  
+```{r}
+clusterLabel <- 4
+grey_scale <- function(colour){
+    grey <- colour[1] * 0.2126 + colour[2] * 0.7152 + colour[3] * 0.0722
+    return(rgb(grey,grey,grey))}
+## this is how the colour is converted to greyscale
+
+color_or_grey <- function(row){
+  if(row["Cluster"]==clusterLabel){
+    return(rgb(row["R"],row["G"],row["B"]))
+  }
+  else{
+    return(grey_scale(as.numeric(row[c("R","G","B")])))
+  }
+}
+
+pivotimage$splash <- apply(pivotimage,1,color_or_grey)
+## Then we can assign a new variable and run the apply function to check and convert it for us  
+```
+  
+and plot it...
+```{r}
+ggplot(data = pivotimage, aes(x = x, y = -y)) +  geom_point(colour = pivotimage$splash) + coord_fixed()
+```
+
