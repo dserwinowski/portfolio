@@ -1,0 +1,122 @@
+---
+title: "Clustering with code"
+output: html_notebook
+---
+
+# 1. Overview
+This notebook is to save all information how to do clustering with code using k-means algorithm. 
+
+# 2. Data
+Same data as used to do clustering by hand - Lambeth Borough demographic data, including age and income
+
+# 3. Preparation
+Install and load libraries needed to finish it (as per Kyle's webinar).
+Tidyverse
+
+
+```{r}
+library(tidyverse)
+library(readr)
+library(ggplot2)
+```
+
+# 4. Load data
+Loading data for analysis and store them under "data" variable
+
+```{r}
+data <- read.csv("Clusteringdata.csv")
+```
+
+# 5. Explore and transform the data
+Check if data loaded correctly using head function
+Rename columns
+Change data types to the correct one - Ward = string, Age - double, Income - integer
+
+```{r}
+names(data) <- c("Ward", "Age", "Income")
+data$Ward <- as.character(data$Ward)
+head(data)
+```
+
+
+If the numeric data has got any other symbol (like currency), "parse" function can be used to get rid of all-numeric symbols
+
+```{r}
+data$Income <- parse_number(data$Income)
+```
+
+#6. Visualise the data
+This is to plot a graph that will show the data using qplot function. Other functions can be used as well like qqplot
+
+```{r}
+qplot(x = data$Age, y = data$Income, label=data$Ward, geom = "text")
+ggplot(data)+
+  geom_point(data = data)+
+  aes(data$Age, data$Income)
+```
+
+
+# 7. Clustering
+This is when k-means is used. 
+
+
+First we need to determine the number of clusters - arbitrarily it's 3.
+
+```{r}
+NoClusters <- 3
+```
+
+
+
+
+
+Then we need to run k-means function to find centroids in the dataset and assign it to the new value. Each ward will be assigned to one centroid (group)
+```{r}
+kMeansResult <- kmeans(data[c("Age", "Income")], centers = NoClusters)
+```
+
+
+
+
+
+Then we will create a Cluster column in the dataset and copy values found by k-means. 
+```{r}
+data$Clusters <- c(kMeansResult$cluster)
+head(data)
+```
+
+
+
+
+
+Then we need to convert the Clusters column to a factor
+```{r}
+data$Clusters <- as.factor(data$Clusters)
+```
+
+
+# 8. Visualise a cluster
+To visualise a cluster, the same qplot function will be used with an additional argument - each color will represent a group as per the result of k-means
+
+```{r}
+qplot(x=data$Age, y=data$Income, label=data$Ward, geom = "text", color=data$Clusters)
+```
+
+
+# 9. (Optional) Fine tuning cluster number
+Number of clusters in k-means depends on the total of within-cluster sum of squares (WSS) . The optimal number of clusters can be found by plotting a function that will show the the points for 1 to n clusters with a value of WSS. Thanks to this you can find an elbow (bend) which indicates the optimal k number.
+
+```{r}
+kClustersMax <- 10
+
+wss <- sapply(1:kClustersMax,
+        function(k){kmeans(data[c("Age", "Income")], k)$tot.withinss})
+
+plot(1:kClustersMax, wss,
+       type="b", pch = 19, frame = FALSE,
+       xlab="Number of clusters K",
+       ylab="Total within-clusters sum of squares")
+```
+
+In our case the optimal value is 2 or 3 - depending on the interpretation. 
+
